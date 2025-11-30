@@ -1,5 +1,6 @@
 package com.coinsocket.ui.dashboard
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.coinsocket.domain.model.Coin
 
+@SuppressLint("DefaultLocale")
 @Composable
 fun CoinItem(
     coin: Coin,
@@ -37,7 +39,6 @@ fun CoinItem(
         } else if (coin.price < previousPrice) {
             priceColor.snapTo(Color(0xFFD50000))
         }
-
         priceColor.animateTo(
             targetValue = defaultColor,
             animationSpec = tween(durationMillis = 500)
@@ -47,7 +48,7 @@ fun CoinItem(
     }
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
