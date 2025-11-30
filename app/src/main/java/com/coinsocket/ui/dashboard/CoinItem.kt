@@ -1,51 +1,67 @@
 package com.coinsocket.ui.dashboard
 
-import android.annotation.SuppressLint
 import androidx.compose.animation.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.coinsocket.domain.model.Coin
+import java.util.Locale
 
-@SuppressLint("DefaultLocale")
 @Composable
 fun CoinItem(
     coin: Coin,
     modifier: Modifier = Modifier
 ) {
-    val defaultColor = MaterialTheme.colorScheme.onSurfaceVariant
-
-    val priceColor = remember { Animatable(defaultColor) }
-
-    var previousPrice by remember { mutableDoubleStateOf(coin.price) }
-    val isPositive = coin.changePercent >= 0
-    val trendColor = if (isPositive) Color(0xFF00C853) else Color(0xFFD50000)
+    val defaultTextColor = MaterialTheme.colorScheme.onSurface
+    val upColor = Color(0xFF00C853)
+    val downColor = Color(0xFFD50000)
+    val priceAnimatable = remember { Animatable(defaultTextColor) }
+    val previousPriceRef = remember { object { var value = coin.price } }
 
     LaunchedEffect(coin.price) {
-        if (coin.price > previousPrice) {
-            priceColor.snapTo(Color(0xFF00C853))
-        } else if (coin.price < previousPrice) {
-            priceColor.snapTo(Color(0xFFD50000))
-        }
-        priceColor.animateTo(
-            targetValue = defaultColor,
-            animationSpec = tween(durationMillis = 500)
-        )
+        val oldPrice = previousPriceRef.value
 
-        previousPrice = coin.price
+        if (coin.price > oldPrice) {
+            priceAnimatable.snapTo(upColor)
+        } else if (coin.price < oldPrice) {
+            priceAnimatable.snapTo(downColor)
+        }
+
+        if (coin.price != oldPrice) {
+            priceAnimatable.animateTo(
+                targetValue = defaultTextColor,
+                animationSpec = tween(durationMillis = 600)
+            )
+            previousPriceRef.value = coin.price
+        }
     }
+
+    val isPositive = coin.changePercent >= 0
+    val trendColor = if (isPositive) upColor else downColor
 
     Card(
         modifier = modifier
@@ -77,12 +93,13 @@ fun CoinItem(
 
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "$${String.format("%.2f", coin.price)}",
+                        text = "$${formatPrice(coin.price)}",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = priceAnimatable.value
                     )
                     Text(
-                        text = "${if (isPositive) "+" else ""}${String.format("%.2f", coin.changePercent)}%",
+                        text = "${if (isPositive) "+" else ""}${String.format(Locale.US, "%.2f", coin.changePercent)}%",
                         color = trendColor,
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium
@@ -98,7 +115,6 @@ fun CoinItem(
                 high = coin.high24h,
                 color = trendColor
             )
-
             Spacer(modifier = Modifier.height(4.dp))
 
             Row(
@@ -106,18 +122,22 @@ fun CoinItem(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "L: ${coin.low24h}",
+                    text = "L: ${formatPrice(coin.low24h)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "H: ${coin.high24h}",
+                    text = "H: ${formatPrice(coin.high24h)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
+}
+
+fun formatPrice(value: Double): String {
+    return String.format(Locale.US, "%.2f", value)
 }
 
 @Composable
