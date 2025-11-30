@@ -41,20 +41,37 @@ class CoinRepositoryImpl @Inject constructor(
     )
 
     override fun observeCoinPrices(): Flow<List<Coin>> = flow {
+        val coinCache = popularCoins.associateWith { symbol ->
+            Coin(
+                symbol = symbol,
+                price = 0.0,
+                high24h = 0.0,
+                low24h = 0.0,
+                openPrice = 0.0
+            )
+        }.toMutableMap()
+
         try {
             client.webSocket(urlString = "wss://stream.binance.com:9443/ws/!miniTicker@arr") {
+                emit(coinCache.values.toList())
                 while (isActive) {
                     val frame = incoming.receive()
                     if (frame is Frame.Text) {
-                        val jsonString = frame.readText()
-                        val dtos = jsonParser.decodeFromString<List<CoinDto>>(jsonString)
-                        val coins = dtos
-                            .filter { dto ->
-                                popularCoins.contains(dto.symbol)
+                        try {
+                            val jsonString = frame.readText()
+                            val dtos = jsonParser.decodeFromString<List<CoinDto>>(jsonString)
+                            var hasChanges = false
+                            dtos.forEach { dto ->
+                                if (popularCoins.contains(dto.symbol)) {
+                                    coinCache[dto.symbol] = dto.toCoin()
+                                    hasChanges = true
+                                }
                             }
-                            .map { it.toCoin() }
-                        if (coins.isNotEmpty()) {
-                            emit(coins)
+                            if (hasChanges) {
+                                emit(coinCache.values.toList())
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
                 }
