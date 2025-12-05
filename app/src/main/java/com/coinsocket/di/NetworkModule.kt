@@ -18,7 +18,6 @@ import kotlin.time.Duration.Companion.seconds
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
-
     @Provides
     @Singleton
     fun provideHttpClient(): HttpClient {
@@ -26,7 +25,6 @@ object NetworkModule {
             install(WebSockets) {
                 pingInterval = 20.seconds
             }
-
             install(ContentNegotiation) {
                 json(
                     Json {
@@ -36,7 +34,6 @@ object NetworkModule {
                     }
                 )
             }
-
             install(HttpTimeout) {
                 connectTimeoutMillis = 5_000
                 socketTimeoutMillis = 15_000

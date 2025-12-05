@@ -1,21 +1,23 @@
 package com.coinsocket.data.repository
 
 import com.coinsocket.data.remote.dto.CoinDto
-import com.coinsocket.data.remote.dto.toCoin
+import com.coinsocket.data.remote.dto.parseKlines
 import com.coinsocket.domain.model.Coin
 import com.coinsocket.domain.repository.CoinRepository
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.Json
-import java.net.ConnectException
-import java.net.SocketException
-import java.net.UnknownHostException
+import kotlinx.serialization.json.JsonArray
 import javax.inject.Inject
 
 class CoinRepositoryImpl @Inject constructor(
@@ -40,20 +42,46 @@ class CoinRepositoryImpl @Inject constructor(
         "LTCUSDT"   // Litecoin
     )
 
+    private suspend fun fetchHistoricalPrices(symbol: String): List<Double> {
+        return try {
+            val response = client.get("https://api.binance.com/api/v3/uiKlines") {
+                url {
+                    parameters.append("symbol", symbol)
+                    parameters.append("interval", "1h")
+                    parameters.append("limit", "24")
+                }
+            }
+            val jsonArray = jsonParser.decodeFromString<JsonArray>(response.bodyAsText())
+            parseKlines(jsonArray)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            List(20) { 0.0 }
+        }
+    }
+
     override fun observeCoinPrices(): Flow<List<Coin>> = flow {
-        val coinCache = popularCoins.associateWith { symbol ->
-            Coin(
-                symbol = symbol,
-                price = 0.0,
-                high24h = 0.0,
-                low24h = 0.0,
-                openPrice = 0.0
-            )
-        }.toMutableMap()
+        val initialCoinsMap = coroutineScope {
+            popularCoins.map { symbol ->
+                async {
+                    val history = fetchHistoricalPrices(symbol)
+                    val currentPrice = history.lastOrNull() ?: 0.0
+
+                    symbol to Coin(
+                        symbol = symbol,
+                        price = currentPrice,
+                        high24h = 0.0,
+                        low24h = 0.0,
+                        changePercent = 0.0,
+                        priceHistory = history
+                    )
+                }
+            }.awaitAll().toMap().toMutableMap()
+        }
+
+        emit(initialCoinsMap.values.toList())
 
         try {
             client.webSocket(urlString = "wss://stream.binance.com:9443/ws/!miniTicker@arr") {
-                emit(coinCache.values.toList())
                 while (isActive) {
                     val frame = incoming.receive()
                     if (frame is Frame.Text) {
@@ -61,14 +89,32 @@ class CoinRepositoryImpl @Inject constructor(
                             val jsonString = frame.readText()
                             val dtos = jsonParser.decodeFromString<List<CoinDto>>(jsonString)
                             var hasChanges = false
+
                             dtos.forEach { dto ->
                                 if (popularCoins.contains(dto.symbol)) {
-                                    coinCache[dto.symbol] = dto.toCoin()
+                                    val oldCoin = initialCoinsMap[dto.symbol]!!
+                                    val newPrice = dto.price.toDoubleOrNull() ?: 0.0
+
+                                    val currentHistory = oldCoin.priceHistory.toMutableList()
+                                    if (currentHistory.isNotEmpty()) {
+                                        currentHistory[currentHistory.lastIndex] = newPrice
+                                    } else {
+                                        currentHistory.add(newPrice)
+                                    }
+
+                                    initialCoinsMap[dto.symbol] = oldCoin.copy(
+                                        price = newPrice,
+                                        high24h = dto.high.toDoubleOrNull() ?: 0.0,
+                                        low24h = dto.low.toDoubleOrNull() ?: 0.0,
+                                        changePercent = calculateChange(newPrice, dto.open.toDoubleOrNull()),
+                                        priceHistory = currentHistory
+                                    )
                                     hasChanges = true
                                 }
                             }
+
                             if (hasChanges) {
-                                emit(coinCache.values.toList())
+                                emit(initialCoinsMap.values.toList())
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -77,15 +123,13 @@ class CoinRepositoryImpl @Inject constructor(
                 }
             }
         } catch (e: Exception) {
-            val errorMessage = when(e) {
-                is HttpRequestTimeoutException -> "Connection Timed Out (5s limit)"
-                is ConnectException -> "Failed to connect. Check internet."
-                is UnknownHostException -> "Server not found."
-                is SocketException -> "Connection lost unexpectedly."
-                else -> e.message ?: "Unknown Error occurred"
-            }
-            throw Exception(errorMessage)
+            throw e
         }
+    }
+
+    private fun calculateChange(current: Double, open: Double?): Double {
+        if (open == null || open == 0.0) return 0.0
+        return ((current - open) / open) * 100
     }
 
     override suspend fun connect() {}

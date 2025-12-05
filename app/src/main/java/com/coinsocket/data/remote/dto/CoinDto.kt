@@ -14,11 +14,19 @@ data class CoinDto(
 )
 
 fun CoinDto.toCoin(): Coin {
+    val currentPrice = this.price.toDoubleOrNull() ?: 0.0
+    val openPrice = this.open.toDoubleOrNull() ?: 0.0
+    val changePercent = if (openPrice != 0.0) {
+        ((currentPrice - openPrice) / openPrice) * 100
+    } else {
+        0.0
+    }
     return Coin(
         symbol = this.symbol,
-        price = this.price.toDoubleOrNull() ?: 0.0,
+        price = currentPrice,
         high24h = this.high.toDoubleOrNull() ?: 0.0,
         low24h = this.low.toDoubleOrNull() ?: 0.0,
-        openPrice = this.open.toDoubleOrNull() ?: 0.0
+        changePercent = changePercent,
+        priceHistory = listOf(currentPrice)
     )
 }
